@@ -49,7 +49,8 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ray = pixel_to_ray(camera, in.screen_position);
     let steps = ray_march_steps_mandelbulb(ray, mandelbulb.max_ray_march_iterations, mandelbulb.collision_distance);
-    return vec4<f32>(steps*mandelbulb.color_map_white + (1.-steps)*mandelbulb.color_map_black, 1.0);
+    let color = steps*mandelbulb.color_map_white + (1.-steps)*mandelbulb.color_map_black;
+    return vec4<f32>(color.rgb, 1.0);
 }
 
 fn ray_march_steps_mandelbulb(ray: Ray, steps: i32, collision_distance: f32) -> f32 {

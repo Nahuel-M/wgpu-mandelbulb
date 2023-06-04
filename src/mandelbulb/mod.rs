@@ -1,7 +1,7 @@
 use bytemuck::{Zeroable, Pod};
 use wgpu::{BindGroupLayoutEntry, BindingType, ShaderStages, BufferBindingType, BufferSize, Device, BufferDescriptor, BufferUsages, Queue, BindGroupEntry, BindGroupDescriptor, Buffer, BindGroup};
 
-#[repr(C)]
+#[repr(C, align(8))]
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
 pub struct MandelBulbUniform{
     pub iterations: i32,
@@ -10,8 +10,8 @@ pub struct MandelBulbUniform{
 
     pub power : f32,
 
-    pub color_map_black: [f32; 3],
-    pub color_map_white: [f32; 3],
+    pub color_map_black: [f32; 4],
+    pub color_map_white: [f32; 4],
 }
 pub struct MandelbulbManager{
     pub mandelbulb: MandelBulbUniform,
@@ -25,7 +25,7 @@ impl MandelbulbManager{
         let bind_group_layout = Self::bind_group_layout(device);
 
         let mandelbulb_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: None,
+            label: Some("MandelbulbBindGroup"),
             layout: &bind_group_layout,
             entries: &[BindGroupEntry {
                 binding: 0,
@@ -35,11 +35,11 @@ impl MandelbulbManager{
 
         let mandelbulb = MandelBulbUniform{
             iterations: 20,
-            max_ray_march_iterations: 256,
-            collision_distance: 0.01,
+            max_ray_march_iterations: 200,
+            collision_distance: 0.0001,
             power: 7.0,
-            color_map_black: [0.0, 0.0, 0.2],
-            color_map_white: [1.0, 0.8, 0.5],
+            color_map_black: [0.5, 0.5, 0.2, 0.], 
+            color_map_white: [0.8, 0.3, 0.1, 0.],
         };
         Self {
             mandelbulb,
@@ -57,7 +57,7 @@ impl MandelbulbManager{
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: BufferSize::new(std::mem::size_of::<MandelbulbManager>() as u64),
+                    min_binding_size: BufferSize::new(std::mem::size_of::<MandelBulbUniform>() as u64),
                 },
                 count: None,
             }],
@@ -72,7 +72,7 @@ impl MandelbulbManager{
     fn init_buffers(device: &Device) -> wgpu::Buffer {
         device.create_buffer(&BufferDescriptor {
             label: Some("Mandelbulb Uniform"),
-            size: std::mem::size_of::<MandelbulbManager>() as u64,
+            size: std::mem::size_of::<MandelBulbUniform>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         })

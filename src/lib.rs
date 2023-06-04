@@ -32,7 +32,7 @@ pub async fn run() {
         web_sys::window()
             .and_then(|win| win.document())
             .and_then(|doc| {
-                let dst = doc.get_element_by_id("wasm")?;
+                let dst = doc.get_element_by_id("renderer")?;
                 let canvas = web_sys::Element::from(window.canvas());
                 dst.append_child(&canvas).ok()?;
                 let closure = Closure::<dyn FnMut(_)>::new(move |_event: web_sys::MouseEvent| {
@@ -56,28 +56,7 @@ pub async fn run() {
                 ref event,
                 window_id,
             } if window_id == state.window.id() => {
-                if !state.input(event) {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => *control_flow = ControlFlow::Exit,
-                        WindowEvent::Resized(physical_size) => {
-                            state.resize(*physical_size);
-                        }
-                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            // new_inner_size is &mut so w have to dereference it twice
-                            state.resize(**new_inner_size);
-                        }
-                        _ => {}
-                    }
-                }
+                handle_window_event(event, control_flow, &mut state);
             }
             Event::RedrawRequested(window_id) if window_id == state.window.id() => {
                 state.update();
@@ -99,4 +78,29 @@ pub async fn run() {
             _ => {}
         }
     });
+}
+
+fn handle_window_event(event: &WindowEvent, control_flow: &mut ControlFlow, state: &mut State){
+    if !state.input(event) {
+        match event {
+            WindowEvent::CloseRequested
+            | WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::Escape),
+                        ..
+                    },
+                ..
+            } => *control_flow = ControlFlow::Exit,
+            WindowEvent::Resized(physical_size) => {
+                state.resize(*physical_size);
+            }
+            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                // new_inner_size is &mut so w have to dereference it twice
+                state.resize(**new_inner_size);
+            }
+            _ => {}
+        }
+    }
 }

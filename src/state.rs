@@ -1,4 +1,4 @@
-use winit::{event::*, window::Window, dpi::PhysicalPosition};
+use winit::{event::*, window::Window};
 use crate::{camera::CameraManager, mandelbulb::{MandelbulbManager}};
 
 pub struct State {
