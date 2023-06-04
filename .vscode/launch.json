@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wgpu-mandelbulb'",
+            "name": "Debug executable 'wgpu_mandelbulb_bin'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=wgpu-mandelbulb",
-                    "--package=wgpu-mandelbulb"
+                    "--bin=wgpu-mandelbulb_bin",
+                    "--package=wgpu_mandelbulb_bin"
                 ],
                 "filter": {
-                    "name": "wgpu-mandelbulb",
+                    "name": "wgpu_mandelbulb_bin",
                     "kind": "bin"
                 }
             },

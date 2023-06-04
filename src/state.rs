@@ -1,7 +1,5 @@
-use winit::{
-    event::*,
-    window::{Window},
-};
+use winit::{event::*, window::Window, dpi::PhysicalPosition};
+use crate::{camera::CameraManager, mandelbulb::{MandelbulbManager}};
 
 pub struct State {
     #[allow(dead_code)]
@@ -14,21 +12,25 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
-    window: Window,
+    pub window: Window,
+    camera_manager: CameraManager,
+    mandelbulb_manager: MandelbulbManager,
     render_pipeline: wgpu::RenderPipeline,
 }
 
 impl State {
     pub async fn new(window: Window) -> Self {
         let size = window.inner_size();
+        #[cfg(not(target_arch = "wasm32"))]{
+            window.set_cursor_grab(winit::window::CursorGrabMode::Confined).unwrap();
+        }
+        window.set_cursor_visible(false);
 
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             dx12_shader_compiler: Default::default(),
         });
-        
+
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
 
         let adapter = instance
@@ -45,22 +47,22 @@ impl State {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu::Features::empty(),
-                    // WebGL doesn't support all of wgpu's features, so if
-                    // we're building for the web we'll have to disable some.
                     limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults()
                     } else {
                         wgpu::Limits::default()
                     },
                 },
-                None, // Trace path
+                None,
             )
             .await
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
 
-        let surface_format = surface_caps.formats.iter()
+        let surface_format = surface_caps
+            .formats
+            .iter()
             .copied()
             .find(wgpu::TextureFormat::is_srgb)
             .unwrap_or(surface_caps.formats[0]);
@@ -82,10 +84,16 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
+        let camera_manager = CameraManager::new(&device, size);
+        let camera_bind_group = CameraManager::bind_group_layout(&device);
+
+        let mandelbulb_manager = MandelbulbManager::new(&device);
+        let mandelbulb_bind_group = MandelbulbManager::bind_group_layout(&device);
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&camera_bind_group, &mandelbulb_bind_group],
                 push_constant_ranges: &[],
             });
 
@@ -111,11 +119,8 @@ impl State {
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                 polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
                 unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
             depth_stencil: None,
@@ -126,7 +131,6 @@ impl State {
             },
             multiview: None,
         });
-
         Self {
             instance,
             adapter,
@@ -137,12 +141,10 @@ impl State {
             clear_color,
             size,
             window,
-            render_pipeline
+            render_pipeline,
+            camera_manager,
+            mandelbulb_manager,
         }
-    }
-
-    pub fn window(&self) -> &Window {
-        &self.window
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -151,32 +153,39 @@ impl State {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.camera_manager.set_size(new_size);
         }
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
-            WindowEvent::CursorMoved { position, .. } => {
-                self.clear_color = wgpu::Color {
-                    r: position.x / self.size.width as f64,
-                    g: position.y / self.size.height as f64,
-                    b: 1.0,
-                    a: 1.0,
-                };
+            WindowEvent::KeyboardInput { input, ..} if input.virtual_keycode != Some(VirtualKeyCode::Escape) => {
+                self.camera_manager.handle_keyboard_input(input);
                 true
-            }
+            },
             _ => false,
         }
     }
 
-    pub fn update(&mut self) {}
+    pub(crate) fn handle_mouse_motion(&mut self, delta: (f64, f64)) {
+        if self.window.has_focus(){
+            self.camera_manager.handle_mouse_motion(delta);
+        }
+    }
+
+    pub fn update(&mut self) {
+    }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
+        self.camera_manager.set_speed(0.01*self.mandelbulb_manager.mandelbulb.estimated_distance(self.camera_manager.position.as_slice().unwrap()));
+        self.camera_manager.update_buffers(&self.queue);
+        self.mandelbulb_manager.update_buffers(&self.queue);
+
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-
+        
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -191,14 +200,16 @@ impl State {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(self.clear_color),
-                        store: true,
+                        store: false,
                     },
                 })],
                 depth_stencil_attachment: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline); // 2.
-            render_pass.draw(0..3, 0..1); // 3.
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, self.camera_manager.bind_group(), &[]);
+            render_pass.set_bind_group(1, self.mandelbulb_manager.bind_group(), &[]);
+            render_pass.draw(0..3, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -206,4 +217,5 @@ impl State {
 
         Ok(())
     }
+
 }

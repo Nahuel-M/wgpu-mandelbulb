@@ -1,3 +1,5 @@
+pub mod camera;
+pub mod mandelbulb;
 mod state;
 
 #[cfg(target_arch = "wasm32")]
@@ -10,9 +12,6 @@ use winit::{
 };
 
 use crate::state::State;
-
-
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
@@ -28,28 +27,35 @@ pub async fn run() {
 
     #[cfg(target_arch = "wasm32")]
     {
-        // window.set_inner_size(PhysicalSize::new(450, 400));
-
         use winit::platform::web::WindowExtWebSys;
+ 
         web_sys::window()
             .and_then(|win| win.document())
             .and_then(|doc| {
                 let dst = doc.get_element_by_id("wasm")?;
                 let canvas = web_sys::Element::from(window.canvas());
                 dst.append_child(&canvas).ok()?;
+                let closure = Closure::<dyn FnMut(_)>::new(move |_event: web_sys::MouseEvent| {
+                    canvas.request_pointer_lock();
+                });
+                dst.add_event_listener_with_callback("mousedown", closure.as_ref().unchecked_ref()).unwrap();
+                closure.forget();
                 Some(())
             })
             .expect("Couldn't append canvas to document body.");
     }
 
-   let mut state = State::new(window).await;
+    let mut state = State::new(window).await;
 
     event_loop.run(move |event, _, control_flow| {
         match event {
+            Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta } , ..} =>{
+                state.handle_mouse_motion(delta);
+            }
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == state.window().id() => {
+            } if window_id == state.window.id() => {
                 if !state.input(event) {
                     match event {
                         WindowEvent::CloseRequested
@@ -73,12 +79,14 @@ pub async fn run() {
                     }
                 }
             }
-            Event::RedrawRequested(window_id) if window_id == state.window().id() => {
+            Event::RedrawRequested(window_id) if window_id == state.window.id() => {
                 state.update();
                 match state.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => state.resize(state.size),
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        state.resize(state.size)
+                    }
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     // We're ignoring timeouts
@@ -86,7 +94,7 @@ pub async fn run() {
                 }
             }
             Event::MainEventsCleared => {
-                state.window().request_redraw();
+                state.window.request_redraw();
             }
             _ => {}
         }
