@@ -23,7 +23,7 @@ ndarray = "0.15.6"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
-wgpu = { version = "0.16.0", features = ["webgl"]}
+wgpu = { version = "0.16.1", features = ["webgl"]}
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = "0.4.30"
 web-sys = { version = "0.3.53", features = [
@@ -31,3 +31,6 @@ web-sys = { version = "0.3.53", features = [
     "Window",
     "Element",
 ]}
+
+[env]
+WGPU_BACKEND = "webgpu"

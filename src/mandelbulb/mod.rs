@@ -38,7 +38,7 @@ impl MandelbulbManager{
             max_ray_march_iterations: 200,
             collision_distance: 0.0001,
             power: 7.0,
-            color_map_black: [0.5, 0.5, 0.2, 0.], 
+            color_map_black: [0.1, 0.1, 0.05, 0.], 
             color_map_white: [0.8, 0.3, 0.1, 0.],
         };
         Self {

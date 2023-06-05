@@ -178,7 +178,7 @@ impl State {
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        self.camera_manager.set_speed(0.01*self.mandelbulb_manager.mandelbulb.estimated_distance(self.camera_manager.position.as_slice().unwrap()));
+        self.camera_manager.set_speed(0.05*self.mandelbulb_manager.mandelbulb.estimated_distance(self.camera_manager.position.as_slice().unwrap()));
         self.camera_manager.update_buffers(&self.queue);
         self.mandelbulb_manager.update_buffers(&self.queue);
 
