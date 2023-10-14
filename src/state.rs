@@ -1,5 +1,5 @@
+use crate::{camera::CameraManager, mandelbulb::MandelbulbManager};
 use winit::{event::*, window::Window};
-use crate::{camera::CameraManager, mandelbulb::{MandelbulbManager}};
 
 pub struct State {
     #[allow(dead_code)]
@@ -11,7 +11,6 @@ pub struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
-    clear_color: wgpu::Color,
     pub window: Window,
     camera_manager: CameraManager,
     mandelbulb_manager: MandelbulbManager,
@@ -21,8 +20,11 @@ pub struct State {
 impl State {
     pub async fn new(window: Window) -> Self {
         let size = window.inner_size();
-        #[cfg(not(target_arch = "wasm32"))]{
-            window.set_cursor_grab(winit::window::CursorGrabMode::Confined).unwrap();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            window
+                .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                .unwrap();
         }
         window.set_cursor_visible(false);
 
@@ -35,7 +37,7 @@ impl State {
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: wgpu::PowerPreference::LowPower,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })
@@ -47,11 +49,7 @@ impl State {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     features: wgpu::Features::empty(),
-                    limits: if cfg!(target_arch = "wasm32") {
-                        wgpu::Limits::downlevel_webgl2_defaults()
-                    } else {
-                        wgpu::Limits::default()
-                    },
+                    limits: wgpu::Limits::default(),
                 },
                 None,
             )
@@ -77,23 +75,21 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let clear_color = wgpu::Color::BLACK;
-
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
         let camera_manager = CameraManager::new(&device, size);
-        let camera_bind_group = CameraManager::bind_group_layout(&device);
+        let camera_bind_group_layout = &camera_manager.camera_bind_group_layout;
 
         let mandelbulb_manager = MandelbulbManager::new(&device);
-        let mandelbulb_bind_group = MandelbulbManager::bind_group_layout(&device);
+        let mandelbulb_bind_group_layout = MandelbulbManager::bind_group_layout(&device);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group, &mandelbulb_bind_group],
+                bind_group_layouts: &[camera_bind_group_layout, &mandelbulb_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -138,7 +134,6 @@ impl State {
             device,
             queue,
             config,
-            clear_color,
             size,
             window,
             render_pipeline,
@@ -157,35 +152,21 @@ impl State {
         }
     }
 
-    pub fn input(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput { input, ..} if input.virtual_keycode != Some(VirtualKeyCode::Escape) => {
-                self.camera_manager.handle_keyboard_input(input);
-                true
-            },
-            _ => false,
-        }
-    }
-
-    pub(crate) fn handle_mouse_motion(&mut self, delta: (f64, f64)) {
-        if self.window.has_focus(){
-            self.camera_manager.handle_mouse_motion(delta);
-        }
-    }
-
-    pub fn update(&mut self) {
-    }
-
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        self.camera_manager.set_speed(0.05*self.mandelbulb_manager.mandelbulb.estimated_distance(self.camera_manager.position.as_slice().unwrap()));
+        let estimated_distance = self
+            .mandelbulb_manager
+            .mandelbulb
+            .estimated_distance(self.camera_manager.position.as_slice().unwrap());
+        self.camera_manager
+            .set_speed(0.05 * estimated_distance.max(0.000001).min(0.2));
         self.camera_manager.update_buffers(&self.queue);
         self.mandelbulb_manager.update_buffers(&self.queue);
 
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -199,7 +180,7 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: false,
                     },
                 })],
@@ -218,4 +199,25 @@ impl State {
         Ok(())
     }
 
+    pub fn handle_event(&mut self, event: &Event<()>) -> bool {
+        match event {
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta },
+                ..
+            } => {
+                if self.window.has_focus() {
+                    self.camera_manager.handle_mouse_motion(*delta);
+                }
+                true
+            }
+            Event::WindowEvent {
+                event: WindowEvent::KeyboardInput { input, .. },
+                ..
+            } => {
+                self.camera_manager.handle_keyboard_input(input)
+                    || self.mandelbulb_manager.handle_keyboard_input(input)
+            }
+            _ => false,
+        }
+    }
 }

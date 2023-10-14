@@ -1,11 +1,15 @@
 use bytemuck::{Pod, Zeroable};
 use ndarray::array;
-use std::{f32::consts::PI};
+use std::f32::consts::PI;
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingType, Buffer,
-    BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Device, Queue, ShaderStages,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry,
+    BindingType, Buffer, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Device,
+    Queue, ShaderStages,
 };
-use winit::{dpi::PhysicalSize, event::{VirtualKeyCode, KeyboardInput}};
+use winit::{
+    dpi::PhysicalSize,
+    event::{KeyboardInput, VirtualKeyCode},
+};
 
 use self::movement::Movement;
 pub mod movement;
@@ -14,22 +18,23 @@ pub mod movement;
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
 struct CameraUniform {
     ray_dir_mat: [[f32; 4]; 3],
-    position: [f32; 3],
-    ratio: f32,
-    depth: f32,
-    _pad: [f32; 3],
+    position:    [f32; 3],
+    ratio:       f32,
+    depth:       f32,
+    _pad:        [f32; 3],
 }
 
 pub struct CameraManager {
     size: PhysicalSize<u32>,
 
     pub position: ndarray::Array1<f32>,
-    yaw: f32,
-    pitch: f32,
+    yaw:          f32,
+    pitch:        f32,
 
     screen_depth: f32,
 
     camera_uniform: Buffer,
+    pub camera_bind_group_layout: BindGroupLayout,
     camera_bind_group: BindGroup,
     movement: Movement,
 }
@@ -37,18 +42,21 @@ pub struct CameraManager {
 impl CameraManager {
     pub fn new(device: &Device, size: PhysicalSize<u32>) -> Self {
         let camera_uniform = Self::init_buffers(device);
-        let bind_group_layout = Self::bind_group_layout(device);
+        let camera_bind_group_layout = Self::bind_group_layout(device);
 
         let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: None,
-            layout: &bind_group_layout,
+            label:   Some("Camera bind group"),
+            layout:  &camera_bind_group_layout,
             entries: &[BindGroupEntry {
-                binding: 0,
+                binding:  0,
                 resource: camera_uniform.as_entire_binding(),
             }],
         });
 
-        let movement = Movement{speed: 0.001, ..Default::default()};
+        let movement = Movement {
+            speed: 0.001,
+            ..Default::default()
+        };
 
         Self {
             size,
@@ -57,8 +65,9 @@ impl CameraManager {
             pitch: 0.0,
             screen_depth: 2.0,
             camera_uniform,
+            camera_bind_group_layout,
             camera_bind_group,
-            movement
+            movement,
         }
     }
 
@@ -66,18 +75,18 @@ impl CameraManager {
         self.size = size;
     }
 
-    pub fn bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
+    fn bind_group_layout(device: &Device) -> wgpu::BindGroupLayout {
         let bind_group_layout = wgpu::BindGroupLayoutDescriptor {
-            label: Some("ShapesBindGroupLayout"),
+            label:   Some("ShapesBindGroupLayout"),
             entries: &[BindGroupLayoutEntry {
-                binding: 0,
+                binding:    0,
                 visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
+                ty:         BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: BufferSize::new(std::mem::size_of::<CameraUniform>() as u64),
                 },
-                count: None,
+                count:      None,
             }],
         };
         device.create_bind_group_layout(&bind_group_layout)
@@ -124,7 +133,11 @@ impl CameraManager {
     }
 
     pub fn forward(&self) -> ndarray::Array1<f32> {
-        ndarray::arr1(&[self.yaw.cos()*self.pitch.cos(), self.pitch.sin(), self.yaw.sin()*self.pitch.cos()])
+        ndarray::arr1(&[
+            self.yaw.cos() * self.pitch.cos(),
+            self.pitch.sin(),
+            self.yaw.sin() * self.pitch.cos(),
+        ])
     }
 
     pub fn right(&self) -> ndarray::Array1<f32> {
@@ -136,7 +149,11 @@ impl CameraManager {
     }
 
     pub fn up(&self) -> ndarray::Array1<f32> {
-        ndarray::arr1(&[-self.yaw.cos()*self.pitch.sin(), self.pitch.cos(), -self.yaw.sin()*self.pitch.sin()])
+        ndarray::arr1(&[
+            -self.yaw.cos() * self.pitch.sin(),
+            self.pitch.cos(),
+            -self.yaw.sin() * self.pitch.sin(),
+        ])
     }
 
     pub fn aspect_ratio(&self) -> f32 {
@@ -166,7 +183,7 @@ impl CameraManager {
         self.position = &self.position + self.forward() * movement.forward * movement.speed;
         self.pitch += movement.pitch;
         self.yaw += movement.yaw;
-        if  self.pitch > PI / 2.{
+        if self.pitch > PI / 2. {
             self.pitch = PI / 2.
         } else if self.pitch < -PI / 2. {
             self.pitch = -PI / 2.
@@ -180,32 +197,23 @@ impl CameraManager {
         self.movement.yaw = 0.;
     }
 
-    pub fn handle_keyboard_input(&mut self, keyboard_input: &KeyboardInput) {
+    pub fn handle_keyboard_input(&mut self, keyboard_input: &KeyboardInput) -> bool {
         use VirtualKeyCode::*;
-        match keyboard_input {
-            KeyboardInput {state, virtual_keycode: Some(A),..} => {
-                self.movement.right = 1. - *state as i8 as f32;
-            },
-            KeyboardInput {state, virtual_keycode: Some(D),..} => {
-                self.movement.right = -(1. - *state as i8 as f32);
-            },
-            KeyboardInput {state, virtual_keycode: Some(S),..} => {
-                self.movement.forward = -(1. - *state as i8 as f32);
-            },
-            KeyboardInput {state, virtual_keycode: Some(W),..} => {
-                self.movement.forward = 1. - *state as i8 as f32;
-            },
-            KeyboardInput {state, virtual_keycode: Some(LShift),..} => {
-                self.movement.up = 1. - *state as i8 as f32;
-            },
-            KeyboardInput {state, virtual_keycode: Some(C),..} => {
-                self.movement.up = -(1. - *state as i8 as f32);
-            },
-            _ => {}
+        let mut input_handled = true;
+        let state = keyboard_input.state as i8;
+        match keyboard_input.virtual_keycode {
+            Some(A) => self.movement.right = 1. - state as f32,
+            Some(D) => self.movement.right = -(1. - state as f32),
+            Some(S) => self.movement.forward = -(1. - state as f32),
+            Some(W) => self.movement.forward = 1. - state as f32,
+            Some(LShift) => self.movement.up = 1. - state as f32,
+            Some(C) => self.movement.up = -(1. - state as f32),
+            _ => input_handled = false,
         }
+        input_handled
     }
 
-    pub(crate) fn handle_mouse_motion(&mut self, delta: (f64, f64)){
+    pub(crate) fn handle_mouse_motion(&mut self, delta: (f64, f64)) {
         self.movement.yaw = delta.0 as f32 / 400.;
         self.movement.pitch = -delta.1 as f32 / 400.;
     }

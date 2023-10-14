@@ -74,19 +74,18 @@ fn pixel_to_ray(camera: Camera, pixel: vec2<f32>) -> Ray {
 
 fn distance_to_mandelbulb(point: vec3<f32>) -> f32 {
 	var z = point;
-	var dr : f32 = 1.0;
-	var r : f32 = 0.0;
-	for (var i : i32 = 0; i < mandelbulb.iterations ; i++) {
+	var dr: f32 = 1.0;
+	var r: f32 = 0.0;
+	for (var i: i32 = 0; i < mandelbulb.iterations; i++) {
 		r = length(z);
 		if (r > 2.) {
             break;
         }
 
 		// convert to polar coordinates
-		var theta : f32 = acos(z.z/r);
-		var phi : f32 = atan2(z.y,z.x);
-        let power_min_1 = mandelbulb.power - 1.0;
-		dr = pow(r, power_min_1)*mandelbulb.power*dr + 1.0;
+		var theta: f32 = acos(z.z/r);
+		var phi: f32 = atan2(z.y,z.x);
+		dr = pow(r, mandelbulb.power - 1.0)*mandelbulb.power*dr + 1.0;
 		
 		// scale and rotate the point
 		let zr = pow(r,mandelbulb.power);
